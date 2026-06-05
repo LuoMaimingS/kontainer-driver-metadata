@@ -10,6 +10,16 @@ Rancher Changelog:
 */
 const CanalTemplateV3_19_0 = `
 {{- $cidrs := splitList "," .ClusterCIDR }}
+{{- $ipv4CIDR := "" }}
+{{- $ipv6CIDR := "" }}
+{{- range $cidr := $cidrs }}
+{{- $cidr = trim $cidr }}
+{{- if contains ":" $cidr }}
+{{- $ipv6CIDR = $cidr }}
+{{- else }}
+{{- $ipv4CIDR = $cidr }}
+{{- end }}
+{{- end }}
 # Canal Template based on Canal v3.19.0
 ---
 # Source: calico/templates/calico-config.yaml
@@ -54,18 +64,20 @@ data:
           "ipam": {
               "type": "host-local",
               "ranges": [
+{{- if $ipv4CIDR }}
                 [
                   {
                     "subnet": "usePodCidr"
                   }
-{{- if eq (len $cidrs) 2 }}
-                ],
+                ]{{ if $ipv6CIDR }},{{ end }}
+{{- end }}
+{{- if $ipv6CIDR }}
                 [
                   {
                     "subnet": "usePodCidrIPv6"
                   }
-{{- end }}
                 ]
+{{- end }}
               ]
           },
           "policy": {
@@ -89,9 +101,14 @@ data:
   # Flannel network configuration. Mounted into the flannel container.
   net-conf.json: |
     {
-      "Network": "{{ first $cidrs }}",
-{{- if eq (len $cidrs) 2 }}
-      "IPv6Network": "{{ last $cidrs }}",
+{{- if $ipv4CIDR }}
+      "Network": "{{ $ipv4CIDR }}",
+      "EnableIPv4": true,
+{{- else }}
+      "EnableIPv4": false,
+{{- end }}
+{{- if $ipv6CIDR }}
+      "IPv6Network": "{{ $ipv6CIDR }}",
       "EnableIPv6": true,
 {{- end }}
       "Backend": {
@@ -3738,9 +3755,13 @@ spec:
             # Set Felix endpoint to host default action to ACCEPT.
             - name: FELIX_DEFAULTENDPOINTTOHOSTACTION
               value: "ACCEPT"
-            # Disable IPv6 on Kubernetes.
+            # Enable IPv6 support when the cluster CIDR includes IPv6.
             - name: FELIX_IPV6SUPPORT
+{{- if $ipv6CIDR }}
+              value: "true"
+{{- else }}
               value: "false"
+{{- end }}
             # Rancher-specific: Define and set FELIX_LOGFILEPATH to none to disable felix logging to file
             - name: FELIX_LOGFILEPATH
               value: "none"
